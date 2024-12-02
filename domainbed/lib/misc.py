@@ -216,9 +216,10 @@ def accuracy(network, loader, weights, device):
 
     network.eval()
     with torch.no_grad():
-        for x, y in loader:
+        for x, y, d in loader:  # Changed to unpack three values
             x = x.to(device)
             y = y.to(device)
+            # We don't need to use 'd' for accuracy calculation
             p = network.predict(x)
             if weights is None:
                 batch_weights = torch.ones(len(x))
@@ -232,7 +233,6 @@ def accuracy(network, loader, weights, device):
                 correct += (p.argmax(1).eq(y).float() * batch_weights).sum().item()
             total += batch_weights.sum().item()
     network.train()
-
     return correct / total
 
 class Tee:
