@@ -224,6 +224,94 @@ class MultipleEnvironmentImageFolder(MultipleDomainDataset):
         self.input_shape = (3, 224, 224,)
         self.num_classes = len(self.datasets[-1].classes)
 
+
+class SoftLabelImageFolder(ImageFolder):
+    def __init__(self, root, transform=None, domain_weights=None):
+        super().__init__(root=root, transform=transform)
+        self.domain_weights = domain_weights
+
+    def __getitem__(self, index):
+        img, label = super().__getitem__(index)
+        return img, label, self.domain_weights
+
+class MultipleEnvironmentImageFolderSoft(MultipleDomainDataset):
+    def __init__(self, root, test_envs, augment, hparams):
+        super().__init__()
+
+        # Get all directory names (both pure and mixed domains)
+        environments = [f.name for f in os.scandir(root) if f.is_dir()]
+        environments = sorted(environments)
+
+        # Define transforms
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        augment_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.3, 0.3, 0.3, 0.3),
+            transforms.RandomGrayscale(),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.datasets = []
+
+        # Parse domain weights from directory names
+        domain_weights = {}
+        for env in environments:
+            if any(x in env for x in ['0.', '1.']):  # Mixed domain folder
+                weights = self.parse_domain_weights(env)
+                domain_weights[env] = weights
+            else:  # Pure domain folder
+                domain_weights[env] = self.create_pure_domain_weights(env, environments)
+
+        for i, environment in enumerate(environments):
+            if augment and (i not in test_envs):
+                env_transform = augment_transform
+            else:
+                env_transform = transform
+
+            path = os.path.join(root, environment)
+            # Create dataset with soft labels
+            env_dataset = SoftLabelImageFolder(
+                path,
+                transform=env_transform,
+                domain_weights=domain_weights[environment]
+            )
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = (3, 224, 224,)
+        self.num_classes = len(self.datasets[-1].classes)
+
+    def parse_domain_weights(self, folder_name):
+        """Parse domain weights from folder name like '0.2cartoon0.8picture'"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        parts = folder_name.split('.')
+
+        for i in range(1, len(parts), 2):
+            weight = float(f"0.{parts[i]}")
+            domain = parts[i + 1]
+            for j, env in enumerate(self.ENVIRONMENTS):
+                if env.lower() in domain.lower():
+                    weights[j] = weight
+
+        return torch.tensor(weights)
+
+    def create_pure_domain_weights(self, domain, all_domains):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        for i, env in enumerate(self.ENVIRONMENTS):
+            if env.lower() in domain.lower():
+                weights[i] = 1.0
+        return torch.tensor(weights)
+
 class VLCS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["C", "L", "S", "V"]
@@ -231,13 +319,12 @@ class VLCS(MultipleEnvironmentImageFolder):
         self.dir = os.path.join(root, "VLCS/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
 
-class PACS(MultipleEnvironmentImageFolder):
+class PACS(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
-    ENVIRONMENTS = ["A", "C", "P", "S"]
+    ENVIRONMENTS = ["A", "C", "P", "S"]  # Art, Cartoon, Photo, Sketch
     def __init__(self, root, test_envs, hparams):
         self.dir = os.path.join(root, "PACS/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
-
 class DomainNet(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 1000
     ENVIRONMENTS = ["clip", "info", "paint", "quick", "real", "sketch"]

@@ -318,13 +318,12 @@ class ARM(ERM):
 
 
 class AbstractDANN(Algorithm):
-    """Domain-Adversarial Neural Networks (abstract class)"""
+    """Domain-Adversarial Neural Networks (abstract class) with soft domain labels"""
 
     def __init__(self, input_shape, num_classes, num_domains,
                  hparams, conditional, class_balance):
-
         super(AbstractDANN, self).__init__(input_shape, num_classes, num_domains,
-                                  hparams)
+                                           hparams)
 
         self.register_buffer('update_count', torch.tensor([0]))
         self.conditional = conditional
@@ -337,21 +336,21 @@ class AbstractDANN(Algorithm):
             num_classes,
             self.hparams['nonlinear_classifier'])
         self.discriminator = networks.MLP(self.featurizer.n_outputs,
-            num_domains, self.hparams)
+                                          num_domains, self.hparams)
         self.class_embeddings = nn.Embedding(num_classes,
-            self.featurizer.n_outputs)
+                                             self.featurizer.n_outputs)
 
         # Optimizers
         self.disc_opt = torch.optim.Adam(
             (list(self.discriminator.parameters()) +
-                list(self.class_embeddings.parameters())),
+             list(self.class_embeddings.parameters())),
             lr=self.hparams["lr_d"],
             weight_decay=self.hparams['weight_decay_d'],
             betas=(self.hparams['beta1'], 0.9))
 
         self.gen_opt = torch.optim.Adam(
             (list(self.featurizer.parameters()) +
-                list(self.classifier.parameters())),
+             list(self.classifier.parameters())),
             lr=self.hparams["lr_g"],
             weight_decay=self.hparams['weight_decay_g'],
             betas=(self.hparams['beta1'], 0.9))
@@ -359,36 +358,40 @@ class AbstractDANN(Algorithm):
     def update(self, minibatches, unlabeled=None):
         device = "cuda" if minibatches[0][0].is_cuda else "cpu"
         self.update_count += 1
-        all_x = torch.cat([x for x, y in minibatches])
-        all_y = torch.cat([y for x, y in minibatches])
+
+        # Unpack minibatches - now including domain soft labels
+        all_x = torch.cat([x for x, y, d in minibatches])
+        all_y = torch.cat([y for x, y, d in minibatches])
+        all_domain_labels = torch.cat([d for x, y, d in minibatches])
+
         all_z = self.featurizer(all_x)
         if self.conditional:
             disc_input = all_z + self.class_embeddings(all_y)
         else:
             disc_input = all_z
-        disc_out = self.discriminator(disc_input)
-        disc_labels = torch.cat([
-            torch.full((x.shape[0], ), i, dtype=torch.int64, device=device)
-            for i, (x, y) in enumerate(minibatches)
-        ])
 
+        disc_out = self.discriminator(disc_input)
+
+        # Use soft cross entropy for domain classification
         if self.class_balance:
             y_counts = F.one_hot(all_y).sum(dim=0)
             weights = 1. / (y_counts[all_y] * y_counts.shape[0]).float()
-            disc_loss = F.cross_entropy(disc_out, disc_labels, reduction='none')
+            # Soft cross entropy with per-sample weights
+            disc_loss = -(all_domain_labels * F.log_softmax(disc_out, dim=1)).sum(dim=1)
             disc_loss = (weights * disc_loss).sum()
         else:
-            disc_loss = F.cross_entropy(disc_out, disc_labels)
+            # Standard soft cross entropy
+            disc_loss = -(all_domain_labels * F.log_softmax(disc_out, dim=1)).sum(dim=1).mean()
 
+        # Gradient penalty with soft labels
         input_grad = autograd.grad(
-            F.cross_entropy(disc_out, disc_labels, reduction='sum'),
+            -(all_domain_labels * F.log_softmax(disc_out, dim=1)).sum(),
             [disc_input], create_graph=True)[0]
-        grad_penalty = (input_grad**2).sum(dim=1).mean(dim=0)
+        grad_penalty = (input_grad ** 2).sum(dim=1).mean(dim=0)
         disc_loss += self.hparams['grad_penalty'] * grad_penalty
 
         d_steps_per_g = self.hparams['d_steps_per_g_step']
-        if (self.update_count.item() % (1+d_steps_per_g) < d_steps_per_g):
-
+        if (self.update_count.item() % (1 + d_steps_per_g) < d_steps_per_g):
             self.disc_opt.zero_grad()
             disc_loss.backward()
             self.disc_opt.step()
@@ -407,11 +410,13 @@ class AbstractDANN(Algorithm):
     def predict(self, x):
         return self.classifier(self.featurizer(x))
 
+
 class DANN(AbstractDANN):
-    """Unconditional DANN"""
+    """Unconditional DANN with soft domain labels"""
+
     def __init__(self, input_shape, num_classes, num_domains, hparams):
         super(DANN, self).__init__(input_shape, num_classes, num_domains,
-            hparams, conditional=False, class_balance=False)
+                                   hparams, conditional=False, class_balance=False)
 
 
 class CDANN(AbstractDANN):
