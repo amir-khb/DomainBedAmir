@@ -372,6 +372,10 @@ class AbstractDANN(Algorithm):
         all_y = torch.cat([y for x, y, d in minibatches])
         all_domain_labels = torch.cat([d for x, y, d in minibatches])
 
+        # Add debug print here
+        print("Domain labels shape:", all_domain_labels.shape)
+        print("Sample domain labels:", all_domain_labels[:5])  # First 5 samples
+
         all_z = self.featurizer(all_x)
         if self.conditional:
             disc_input = all_z + self.class_embeddings(all_y)
@@ -379,6 +383,10 @@ class AbstractDANN(Algorithm):
             disc_input = all_z
 
         disc_out = self.discriminator(disc_input)
+
+        # Add debug print here
+        print("Discriminator output shape:", disc_out.shape)
+        print("Sample disc outputs:", F.softmax(disc_out, dim=1)[:5])
 
         # Make sure discriminator output matches number of domains
         assert disc_out.shape[1] == all_domain_labels.shape[1], \
