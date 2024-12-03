@@ -1,6 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 import os
+import re
 import torch
 from PIL import Image, ImageFile
 from torchvision import transforms
@@ -296,23 +297,23 @@ class MultipleEnvironmentImageFolderSoft(MultipleDomainDataset):
         self.input_shape = (3, 224, 224,)
         self.num_classes = len(self.datasets[-1].classes)
 
-    def parse_domain_weights(self, folder_name):
-        """Parse domain weights from folder name (e.g., '0.2cartoon0.8photo')"""
-        weights = [0.0] * len(self.ENVIRONMENTS)
-        parts = folder_name.replace('photo', 'P').replace('cartoon', 'C').replace('art', 'A').replace('sketch',
-                                                                                                      'S').split('.')
+    ENVIRONMENTS = ['A', 'C', 'P', 'S']  # [Art, Cartoon, Photo, Sketch]
 
-        i = 1
-        while i < len(parts):
-            try:
-                weight = float(f"0.{parts[i]}")
-                domain_name = parts[i + 1][0].upper()  # Get first letter and uppercase
-                for j, env in enumerate(self.ENVIRONMENTS):
-                    if env == domain_name:
-                        weights[j] = weight
-                i += 2
-            except:
-                i += 1
+    def parse_domain_weights(self, folder_name):
+        """Parse domain weights from folder name (e.g., '0.17art_painting0.83cartoon')"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        parts = re.findall(r'(\d+\.\d+)(art_painting|cartoon|photo|sketch)', folder_name)
+
+        for weight_str, domain in parts:
+            weight = float(weight_str)
+            if 'art_painting' in domain:
+                weights[0] = weight
+            elif 'cartoon' in domain:
+                weights[1] = weight
+            elif 'photo' in domain:
+                weights[2] = weight
+            elif 'sketch' in domain:
+                weights[3] = weight
 
         return torch.tensor(weights)
 
