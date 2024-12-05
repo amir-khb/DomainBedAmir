@@ -360,13 +360,44 @@ class DomainNet(MultipleEnvironmentImageFolder):
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
 
 
-class OfficeHome(MultipleEnvironmentImageFolder):
+class OfficeHome(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
-    ENVIRONMENTS = ["A", "C", "P", "R"]
+    ENVIRONMENTS = ["A", "C", "P", "R"]  # Art, Clipart, Product, Real World
 
     def __init__(self, root, test_envs, hparams):
         self.dir = os.path.join(root, "office_home/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+
+    def parse_domain_weights(self, folder_name):
+        """Parse domain weights from folder name (e.g., '0.17Art0.83Product')"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        parts = re.findall(r'(\d+\.\d+)(Art|Clipart|Product|Real_World)', folder_name)
+
+        for weight_str, domain in parts:
+            weight = float(weight_str)
+            if domain == 'Art':
+                weights[0] = weight
+            elif domain == 'Clipart':
+                weights[1] = weight
+            elif domain == 'Product':
+                weights[2] = weight
+            elif domain == 'Real_World':
+                weights[3] = weight
+
+        return torch.tensor(weights)
+
+    def create_pure_domain_weights(self, folder_name):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        if folder_name == 'Art':
+            weights[0] = 1.0
+        elif folder_name == 'Clipart':
+            weights[1] = 1.0
+        elif folder_name == 'Product':
+            weights[2] = 1.0
+        elif folder_name == 'Real_World':
+            weights[3] = 1.0
+        return torch.tensor(weights)
 
 
 class TerraIncognita(MultipleEnvironmentImageFolder):
