@@ -111,7 +111,7 @@ class ResNet(torch.nn.Module):
             self.network = torchvision.models.resnet18(pretrained=True)
             self.n_outputs = 512
         else:
-            self.network = torchvision.models.resnet50(pretrained=True)
+            self.network = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.DEFAULT)
             self.n_outputs = 2048
 
         if hparams['resnet50_augmix']:
