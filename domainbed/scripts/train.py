@@ -20,6 +20,7 @@ from domainbed import hparams_registry
 from domainbed import algorithms
 from domainbed.lib import misc
 from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
+from domainbed.lib.pairedDataLoader import PairedDataLoader
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Domain generalization')
@@ -143,13 +144,14 @@ if __name__ == "__main__":
     if args.task == "domain_adaptation" and len(uda_splits) == 0:
         raise ValueError("Not enough unlabeled samples for domain adaptation.")
 
-    train_loaders = [InfiniteDataLoader(
-        dataset=env,
-        weights=env_weights,
+    train_loader = PairedDataLoader(
+        dataset=dataset,
+        domains=list(range(len(dataset))),
         batch_size=hparams['batch_size'],
-        num_workers=dataset.N_WORKERS)
-        for i, (env, env_weights) in enumerate(in_splits)
-        if i not in args.test_envs]
+        num_workers=dataset.N_WORKERS,
+        test_domains=args.test_envs
+    )
+    train_loaders = [train_loader]  # Wrap in list for compatibility with original code
 
     uda_loaders = [InfiniteDataLoader(
         dataset=env,
@@ -207,10 +209,11 @@ if __name__ == "__main__":
         step_start_time = time.time()
         minibatches_device = [(x.to(device), y.to(device), d.to(device))
                 for x, y, d in next(train_minibatches_iterator)]
-        for batch_idx, (x, y, d) in enumerate(minibatches_device):
-            print(f"Batch {batch_idx}:")
-            print(f"Labels (y): {y}")
-            print(f"Domain IDs (d): {d}")
+        # for batch_idx, (x, y, d) in enumerate(minibatches_device):
+        #     if batch_idx % 10000 == 0:  # Show info every 10000 batches
+        #         print(f"\nBatch {batch_idx}:")
+        #         print(f"Labels (y): {y}")
+        #         print(f"Domain IDs (d): {d}\n")
         if args.task == "domain_adaptation":
             uda_device = [x.to(device)
                 for x,_ in next(uda_minibatches_iterator)]
