@@ -333,31 +333,57 @@ class MultipleEnvironmentImageFolderSoft(MultipleDomainDataset):
         return torch.tensor(weights)
 
 
-class VLCS(MultipleEnvironmentImageFolder):
+class VLCS(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
-    ENVIRONMENTS = ["C", "L", "S", "V"]
+    ENVIRONMENTS = ["C", "L", "S", "V"]  # Caltech, LabelMe, Sun, VOC
 
     def __init__(self, root, test_envs, hparams):
         self.dir = os.path.join(root, "VLCS/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
 
+    def parse_domain_weights(self, folder_name):
+        """Parse domain weights from folder name (e.g., '0.17Caltech0.83LabelMe')"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        parts = re.findall(r'(\d+\.\d+)(Caltech|LabelMe|Sun|VOC)', folder_name)
 
-class PACS(MultipleEnvironmentImageFolderSoft):
-    CHECKPOINT_FREQ = 300
-    ENVIRONMENTS = ["A", "C", "P", "S"]  # Art, Cartoon, Photo, Sketch
+        for weight_str, domain in parts:
+            weight = float(weight_str)
+            if domain == 'Caltech':
+                weights[0] = weight
+            elif domain == 'LabelMe':
+                weights[1] = weight
+            elif domain == 'Sun':
+                weights[2] = weight
+            elif domain == 'VOC':
+                weights[3] = weight
 
-    def __init__(self, root, test_envs, hparams):
-        self.dir = os.path.join(root, "PACS/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+        return torch.tensor(weights)
 
+    def create_pure_domain_weights(self, folder_name):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        # Map full domain names to single letter codes
+        domain_mapping = {
+            'Caltech': 'C',
+            'LabelMe': 'L',
+            'Sun': 'S',
+            'VOC': 'V'
+        }
 
-class DomainNet(MultipleEnvironmentImageFolder):
-    CHECKPOINT_FREQ = 1000
-    ENVIRONMENTS = ["clip", "info", "paint", "quick", "real", "sketch"]
+        # Get the single letter code for the domain
+        for full_name, code in domain_mapping.items():
+            if full_name in folder_name:
+                domain_name = code
+                break
+        else:
+            domain_name = folder_name[0].upper()  # Fallback to first letter if not found
 
-    def __init__(self, root, test_envs, hparams):
-        self.dir = os.path.join(root, "domain_net/")
-        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+        for i, env in enumerate(self.ENVIRONMENTS):
+            if env == domain_name:
+                weights[i] = 1.0
+                break
+
+        return torch.tensor(weights)
 
 
 class OfficeHome(MultipleEnvironmentImageFolderSoft):
@@ -400,13 +426,33 @@ class OfficeHome(MultipleEnvironmentImageFolderSoft):
         return torch.tensor(weights)
 
 
-class TerraIncognita(MultipleEnvironmentImageFolder):
+class TerraIncognita(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["L100", "L38", "L43", "L46"]
 
     def __init__(self, root, test_envs, hparams):
         self.dir = os.path.join(root, "terra_incognita/")
         super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+
+    def create_pure_domain_weights(self, folder_name):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+
+        # Map location names to indices
+        domain_mapping = {
+            'L100': 0,
+            'L38': 1,
+            'L43': 2,
+            'L46': 3
+        }
+
+        # Find which domain this folder represents
+        for domain_name, index in domain_mapping.items():
+            if domain_name in folder_name:
+                weights[index] = 1.0
+                break
+
+        return torch.tensor(weights)
 
 
 class SVIRO(MultipleEnvironmentImageFolder):
@@ -453,6 +499,36 @@ class WILDSEnvironment:
 class WILDSDataset(MultipleDomainDataset):
     INPUT_SHAPE = (3, 224, 224)
 
+    def metadata_values(self, wilds_dataset, metadata_name):
+        # Print metadata fields
+        print("\nFMoW Dataset Metadata Information:")
+        print("-----------------------------")
+        print(f"Available metadata fields: {wilds_dataset.metadata_fields}")
+        print(f"Looking for field: {metadata_name}")
+
+        # Get the index and values
+        metadata_index = wilds_dataset.metadata_fields.index(metadata_name)
+        print(f"Found {metadata_name} at index: {metadata_index}")
+
+        # Get the full region column
+        metadata_vals = wilds_dataset.metadata_array[:, metadata_index]
+        print(f"\nFull {metadata_name} field values:")
+        print(metadata_vals)
+        print(f"\nShape of {metadata_name} field: {metadata_vals.shape}")
+
+        # Count occurrences of each region
+        unique_vals, counts = torch.unique(metadata_vals, return_counts=True)
+        print(f"\nValue distribution in {metadata_name} field:")
+        for val, count in zip(unique_vals.tolist(), counts.tolist()):
+            print(f"Region {val}: {count} samples")
+
+        # Get unique values for return
+        unique_vals = sorted(list(set(metadata_vals.view(-1).tolist())))
+        print(f"\nUnique values: {unique_vals}")
+        print("-----------------------------\n")
+
+        return unique_vals
+
     def __init__(self, dataset, metadata_name, test_envs, augment, hparams):
         super().__init__()
 
@@ -476,8 +552,10 @@ class WILDSDataset(MultipleDomainDataset):
 
         self.datasets = []
 
-        for i, metadata_value in enumerate(
-                self.metadata_values(dataset, metadata_name)):
+        # Get and print unique metadata values
+        unique_values = self.metadata_values(dataset, metadata_name)
+        print("Creating environments for each value:")
+        for i, metadata_value in enumerate(unique_values):
             if augment and (i not in test_envs):
                 env_transform = augment_transform
             else:
@@ -486,15 +564,16 @@ class WILDSDataset(MultipleDomainDataset):
             env_dataset = WILDSEnvironment(
                 dataset, metadata_name, metadata_value, env_transform)
 
+            print(f"Created environment: {env_dataset.name}")
             self.datasets.append(env_dataset)
 
         self.input_shape = (3, 224, 224,)
         self.num_classes = dataset.n_classes
 
-    def metadata_values(self, wilds_dataset, metadata_name):
-        metadata_index = wilds_dataset.metadata_fields.index(metadata_name)
-        metadata_vals = wilds_dataset.metadata_array[:, metadata_index]
-        return sorted(list(set(metadata_vals.view(-1).tolist())))
+    # def metadata_values(self, wilds_dataset, metadata_name):
+    #     metadata_index = wilds_dataset.metadata_fields.index(metadata_name)
+    #     metadata_vals = wilds_dataset.metadata_array[:, metadata_index]
+    #     return sorted(list(set(metadata_vals.view(-1).tolist())))
 
 
 class WILDSCamelyon(WILDSDataset):
@@ -508,11 +587,11 @@ class WILDSCamelyon(WILDSDataset):
 
 
 class WILDSFMoW(WILDSDataset):
-    ENVIRONMENTS = ["region_0", "region_1", "region_2", "region_3",
-                    "region_4", "region_5"]
+    ENVIRONMENTS = ["region_0", "region_1", "region_2", "region_3", "region_4", "region_5"]
 
     def __init__(self, root, test_envs, hparams):
         dataset = FMoWDataset(root_dir=root)
+        print("\nInitializing WILDSFMoW dataset...")
         super().__init__(
             dataset, "region", test_envs, hparams['data_augmentation'], hparams)
 
