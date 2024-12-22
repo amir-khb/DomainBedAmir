@@ -385,7 +385,50 @@ class VLCS(MultipleEnvironmentImageFolderSoft):
 
         return torch.tensor(weights)
 
+class PACS(MultipleEnvironmentImageFolderSoft):
+    CHECKPOINT_FREQ = 300
+    ENVIRONMENTS = ["A", "C", "P", "S"]  # [Art, Cartoon, Photo, Sketch]
 
+    def __init__(self, root, test_envs, hparams):
+        self.dir = os.path.join(root, "PACS/")
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+
+    def parse_domain_weights(self, folder_name):
+        """Parse domain weights from folder name (e.g., '0.17art0.83photo')"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        parts = re.findall(r'(\d+\.\d+)(art_painting|cartoon|photo|sketch)', folder_name)
+
+        for weight_str, domain in parts:
+            weight = float(weight_str)
+            if domain == 'art_painting':
+                weights[0] = weight
+            elif domain == 'cartoon':
+                weights[1] = weight
+            elif domain == 'photo':
+                weights[2] = weight
+            elif domain == 'sketch':
+                weights[3] = weight
+
+        return torch.tensor(weights)
+
+    def create_pure_domain_weights(self, folder_name):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        # Map folder names to environment indices
+        domain_mapping = {
+            'art_painting': 0,
+            'cartoon': 1,
+            'photo': 2,
+            'sketch': 3
+        }
+
+        # Find which domain this folder represents
+        for domain, index in domain_mapping.items():
+            if domain in folder_name.lower():
+                weights[index] = 1.0
+                break
+
+        return torch.tensor(weights)
 class OfficeHome(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
     ENVIRONMENTS = ["A", "C", "P", "R"]  # Art, Clipart, Product, Real World
@@ -397,7 +440,7 @@ class OfficeHome(MultipleEnvironmentImageFolderSoft):
     def parse_domain_weights(self, folder_name):
         """Parse domain weights from folder name (e.g., '0.17Art0.83Product')"""
         weights = [0.0] * len(self.ENVIRONMENTS)
-        parts = re.findall(r'(\d+\.\d+)(Art|Clipart|Product|Real_World)', folder_name)
+        parts = re.findall(r'(\d+\.\d+)(Art|Clipart|Product|Real World)', folder_name)
 
         for weight_str, domain in parts:
             weight = float(weight_str)
@@ -407,7 +450,7 @@ class OfficeHome(MultipleEnvironmentImageFolderSoft):
                 weights[1] = weight
             elif domain == 'Product':
                 weights[2] = weight
-            elif domain == 'Real_World':
+            elif domain == 'Real World':
                 weights[3] = weight
 
         return torch.tensor(weights)
@@ -421,10 +464,36 @@ class OfficeHome(MultipleEnvironmentImageFolderSoft):
             weights[1] = 1.0
         elif folder_name == 'Product':
             weights[2] = 1.0
-        elif folder_name == 'Real_World':
+        elif folder_name == 'Real World':
             weights[3] = 1.0
         return torch.tensor(weights)
 
+
+class DomainNet(MultipleEnvironmentImageFolderSoft):
+    CHECKPOINT_FREQ = 1000
+    ENVIRONMENTS = ["clip", "info", "paint", "quick", "real", "sketch"]
+
+    def __init__(self, root, test_envs, hparams):
+        self.dir = os.path.join(root, "domain_net/")
+        super().__init__(self.dir, test_envs, hparams['data_augmentation'], hparams)
+
+    def create_pure_domain_weights(self, folder_name):
+        """Create one-hot domain weights for pure domain folders"""
+        weights = [0.0] * len(self.ENVIRONMENTS)
+        # Map folder names to environment indices
+        domain_mapping = {
+            'clipart': 0,
+            'infograph': 1,
+            'painting': 2,
+            'quickdraw': 3,
+            'real': 4,
+            'sketch': 5
+        }
+        # Find which domain this folder represents
+        if folder_name in domain_mapping:
+            index = domain_mapping[folder_name]
+            weights[index] = 1.0
+        return torch.tensor(weights)
 
 class TerraIncognita(MultipleEnvironmentImageFolderSoft):
     CHECKPOINT_FREQ = 300
@@ -438,19 +507,18 @@ class TerraIncognita(MultipleEnvironmentImageFolderSoft):
         """Create one-hot domain weights for pure domain folders"""
         weights = [0.0] * len(self.ENVIRONMENTS)
 
-        # Map location names to indices
+        # Map folder names to environment indices
         domain_mapping = {
-            'L100': 0,
-            'L38': 1,
-            'L43': 2,
-            'L46': 3
+            'location_100': 0,  # maps to L100
+            'location_38': 1,  # maps to L38
+            'location_43': 2,  # maps to L43
+            'location_46': 3  # maps to L46
         }
 
         # Find which domain this folder represents
-        for domain_name, index in domain_mapping.items():
-            if domain_name in folder_name:
-                weights[index] = 1.0
-                break
+        if folder_name in domain_mapping:
+            index = domain_mapping[folder_name]
+            weights[index] = 1.0
 
         return torch.tensor(weights)
 

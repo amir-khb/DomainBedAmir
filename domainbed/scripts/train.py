@@ -150,7 +150,6 @@ if __name__ == "__main__":
         batch_size=hparams['batch_size'],
         num_workers=dataset.N_WORKERS,
         test_domains=args.test_envs,
-        alpha_range=(1.0, 2.0)
     )
     train_loaders = [train_loader]  # Wrap in list for compatibility with original code
 
