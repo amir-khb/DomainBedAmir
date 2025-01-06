@@ -24,7 +24,6 @@ from domainbed.lib.misc import (
 
 ALGORITHMS = [
     'DANN',
-    'CDANN',
 ]
 
 
@@ -174,11 +173,3 @@ class DANN(AbstractDANN):
     def __init__(self, input_shape, num_classes, num_domains, hparams):
         super(DANN, self).__init__(input_shape, num_classes, num_domains,
                                    hparams, conditional=False, class_balance=False)
-
-
-class CDANN(AbstractDANN):
-    """Conditional DANN"""
-
-    def __init__(self, input_shape, num_classes, num_domains, hparams):
-        super(CDANN, self).__init__(input_shape, num_classes, num_domains,
-                                    hparams, conditional=True, class_balance=True)

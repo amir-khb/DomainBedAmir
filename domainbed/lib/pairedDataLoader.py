@@ -291,6 +291,105 @@ class PairedDataLoader:
                 torch.tensor(all_labels),
                 torch.stack(all_domain_labels))
 
+# class PairedDataLoader:
+#     def __init__(self, dataset, domains, batch_size, num_workers, test_domains,
+#                  visualize_first_n=5, seed=42):
+#         """
+#         Initialize the data loader with reproducible sampling.
+#
+#         Args:
+#             dataset: List of domain datasets
+#             domains: List of domain indices
+#             batch_size: Number of samples per batch
+#             num_workers: Number of worker processes
+#             test_domains: List of domain indices to exclude from training
+#             visualize_first_n: Number of initial mixups to visualize
+#             seed: Random seed for reproducibility
+#         """
+#         # Set all random seeds
+#         self.seed = seed
+#         np.random.seed(self.seed)
+#         torch.manual_seed(self.seed)
+#         torch.cuda.manual_seed(self.seed)
+#         random.seed(self.seed)
+#
+#         self.dataset = dataset
+#         self.domains = domains
+#         self.batch_size = batch_size
+#         self.sampler = DomainPairSampler(dataset, domains, batch_size, test_domains,
+#                                          seed=seed)
+#         self.batch_count = 0
+#         self.visualize_first_n = visualize_first_n
+#         self.visualized_count = 0
+#
+#     def __iter__(self):
+#         return self
+#
+#     def __next__(self):
+#         # Reset random seeds before each batch
+#         np.random.seed(self.seed + self.batch_count)
+#         torch.manual_seed(self.seed + self.batch_count)
+#         torch.cuda.manual_seed(self.seed + self.batch_count)
+#         random.seed(self.seed + self.batch_count)
+#
+#         batch_indices, mixup_lambdas = self.sampler.sample_batch()
+#
+#         all_images = []
+#         all_labels = []
+#         all_domain_labels = []
+#
+#         for idx, ((domain1_idx, idx1, domain2_idx, idx2), lam) in enumerate(
+#                 zip(batch_indices, mixup_lambdas)):
+#
+#             # Get items
+#             item1 = self.dataset[domain1_idx][idx1]
+#             item2 = self.dataset[domain2_idx][idx2]
+#
+#             # Create domain labels
+#             domain1_label = torch.zeros(4)
+#             domain2_label = torch.zeros(4)
+#             domain1_label[domain1_idx] = 1.0
+#             domain2_label[domain2_idx] = 1.0
+#
+#             # Add originals
+#             all_images.extend([item1[0], item2[0]])
+#             all_labels.extend([item1[1], item2[1]])
+#             all_domain_labels.extend([domain1_label, domain2_label])
+#
+#             # Create mixed image
+#             mixed_image = lam * item1[0] + (1 - lam) * item2[0]
+#
+#             # Assign hard domain label based on lambda value
+#             mixed_domain_label = torch.zeros(4)
+#             if lam >= 0.5:
+#                 mixed_domain_label[domain1_idx] = 1.0  # Assign to domain A if lambda >= 0.5
+#             else:
+#                 mixed_domain_label[domain2_idx] = 1.0  # Assign to domain B if lambda < 0.5
+#
+#             # Add mixed
+#             all_images.append(mixed_image)
+#             all_labels.append(item1[1])
+#             all_domain_labels.append(mixed_domain_label)
+#
+#             # Visualize first N pairs
+#             if self.visualized_count < self.visualize_first_n:
+#                 visualize_mixup(
+#                     item1[0], item2[0], mixed_image, lam,
+#                     save_path=f'mixup_visualization_{self.visualized_count}.png'
+#                 )
+#                 print(f"\nMixup {self.visualized_count + 1}:")
+#                 print(f"Domain A: {domain1_label.tolist()}")
+#                 print(f"Domain B: {domain2_label.tolist()}")
+#                 print(f"Mixed domain (hard label): {mixed_domain_label.tolist()}")
+#                 print(f"Lambda: {lam:.3f}")
+#                 self.visualized_count += 1
+#
+#         self.batch_count += 1
+#
+#         return (torch.stack(all_images),
+#                 torch.tensor(all_labels),
+#                 torch.stack(all_domain_labels))
+
 
 # class DomainPairSampler:
 #     """
